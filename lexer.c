@@ -311,6 +311,7 @@ start:
                     line++;
 
                 comment = 0;
+                column = 1;
                 /* Fall through. */
             case '\t':
                 /* Fall through. */
@@ -326,6 +327,7 @@ start:
             default:
                 if (comment)
                     goto next;
+
                 break;
         }
 
