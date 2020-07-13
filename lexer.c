@@ -9,7 +9,7 @@
 #define FATAL_ERROR(...) fatal_error(__func__, __LINE__, __VA_ARGS__)
 
 static int verbose, extra_verbose;
-static unsigned int line;
+static unsigned int line, start_column, column;
 
 #define TOKEN_LIST \
     X(TOKEN_SYMBOL) \
@@ -28,7 +28,12 @@ static unsigned int line;
     X(TOKEN_IF) \
     X(TOKEN_WHILE) \
     X(TOKEN_FOR) \
-    X(TOKEN_ELSE)
+    X(TOKEN_ELSE) \
+    X(TOKEN_LP) \
+    X(TOKEN_RP) \
+    X(TOKEN_LC) \
+    X(TOKEN_RC) \
+    X(TOKEN_DOTC)
 
 enum token_id
 {
@@ -58,7 +63,7 @@ struct
     {
         enum token_id id;
         char *value;
-        unsigned int line;
+        unsigned int line, column;
     } *list;
     size_t n;
 } tokens;
@@ -91,6 +96,14 @@ static void logvv(const char *const func, const int line,
     }
 }
 
+static void cleanup(void)
+{
+    if (tokens.list)
+    {
+        free(tokens.list);
+    }
+}
+
 static void fatal_error(const char *const func, const int line,
         const char *const format, ...)
 {
@@ -108,6 +121,7 @@ static void fatal_error(const char *const func, const int line,
         vfprintf(stderr, format, ap);
         fprintf(stderr, "\n");
         va_end(ap);
+        cleanup();
         exit(EXIT_FAILURE);
     }
 }
@@ -144,24 +158,18 @@ static char *read_file(const char *const path)
                     return buf;
                 }
                 else
-                {
                     FATAL_ERROR("Could not read %s succesfully. "
                                 "Only %d/%d bytes could be read",
                                 path, read_bytes, sz);
-                }
             }
             else
-            {
                 FATAL_ERROR("Cannot allocate buffer for file data");
-            }
 
             fclose(f);
         }
     }
     else
-    {
         FATAL_ERROR("Input file %s could not be opened", path);
-    }
 
     return NULL;
 }
@@ -195,24 +203,26 @@ static int alloc_token(const enum token_id id,
                 }
                 else
                 {
-                    fprintf(stderr, "could not allocate space for"
-                            "token value\n");
+                    FATAL_ERROR("could not allocate space for token value");
                     return 1;
                 }
             }
+
             default:
                 new_t->value = "";
+                break;
         }
 
         new_t->id = id;
         new_t->line = line;
-        LOGVV("id=%s, value=\"%s\", line=%u", token_name(new_t->id),
-                new_t->value, new_t->line);
+        new_t->column = start_column;
+        LOGVV("id=%s, value=\"%s\", line=%u, col=%u", token_name(new_t->id),
+                new_t->value, new_t->line, new_t->column);
         return 0;
 
     }
     else
-        fprintf(stderr, "could not allocate space for new token\n");
+        FATAL_ERROR("could not allocate space for new token");
 
     return 1;
 }
@@ -268,21 +278,39 @@ static int tokenize(const char *const buf)
         {TOKEN_SLASH, "/"},
         {TOKEN_STAR, "*"},
         {TOKEN_DOT, "."},
-        {TOKEN_MOV, "="}
+        {TOKEN_MOV, "="},
+        {TOKEN_LP, "("},
+        {TOKEN_RP, ")"},
+        {TOKEN_LC, "{"},
+        {TOKEN_RC, "}"},
+        {TOKEN_DOTC, ";"}
     };
 
     const char *c = buf;
     char symbol[128];
     char *s = symbol;
-#define REWIND do {s = symbol; *s = '\0';} while (0)
+    int comment = 0;
+    column = 1;
+#define REWIND do {s = symbol;} while (0)
 
     while (*c)
     {
 start:
         switch (*c)
         {
+            case '#':
+                comment = 1;
+                goto next;
+
             case '\n':
+                /* Fall through. */
                 line++;
+            case '\r':
+                /* Support for CR-only. */
+                if (*c == '\r' && (*(c + 1) != '\n'))
+                    line++;
+
+                comment = 0;
                 /* Fall through. */
             case '\t':
                 /* Fall through. */
@@ -296,6 +324,8 @@ start:
                 goto next;
 
             default:
+                if (comment)
+                    goto next;
                 break;
         }
 
@@ -360,13 +390,13 @@ int main(const int argc, const char *argv[])
                 verbose = 1;
             else
             {
-                fprintf(stderr, "unrecognized option %s\n", arg);
+                FATAL_ERROR("unrecognized option %s", arg);
                 return EXIT_FAILURE;
             }
         }
         else
         {
-            fprintf(stderr, "input path already specified (%s)", path);
+            FATAL_ERROR("input path already specified (%s)", path);
             return EXIT_FAILURE;
         }
     }
@@ -376,8 +406,7 @@ int main(const int argc, const char *argv[])
         if (exec(path)) return EXIT_FAILURE;
     }
     else
-        fprintf(stderr, "no input file specified\n");
+        FATAL_ERROR("no input file specified");
 
     return EXIT_FAILURE;
 }
-
