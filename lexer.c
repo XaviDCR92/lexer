@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -216,6 +217,7 @@ static int alloc_token(const enum token_id id,
         new_t->id = id;
         new_t->line = line;
         new_t->column = start_column;
+        start_column = 0;
         LOGVV("id=%s, value=\"%s\", line=%u, col=%u", token_name(new_t->id),
                 new_t->value, new_t->line, new_t->column);
         return 0;
@@ -321,6 +323,7 @@ start:
                 if (process_symbol(symbol))
                     return 1;
 
+                start_column = 0;
                 REWIND;
                 goto next;
 
@@ -346,17 +349,24 @@ start:
                 }
 
                 strcpy(symbol, ops[i].str);
+                start_column = column;
                 if (alloc_token(ops[i].id, symbol))
                     return 1;
 
                 REWIND;
                 c += len;
+                column += len;
                 goto start;
             }
         }
 
         *s++ = *c;
+        if (!start_column)
+            start_column = column;
 next:
+        if (*c != '\n' && *c != '\r')
+            column++;
+
         c++;
     }
 
@@ -370,7 +380,6 @@ static int exec(const char *const path)
     if (buf) tokenize(buf); else return 1;
 
     free(buf);
-
     return 0;
 }
 
@@ -410,5 +419,5 @@ int main(const int argc, const char *argv[])
     else
         FATAL_ERROR("no input file specified");
 
-    return EXIT_FAILURE;
+    return EXIT_SUCCESS;
 }
