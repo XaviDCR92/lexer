@@ -17,6 +17,7 @@ static unsigned int line, start_column, column;
     X(TOKEN_EQ) \
     X(TOKEN_MOV) \
     X(TOKEN_INT) \
+    X(TOKEN_HEX) \
     X(TOKEN_FLOAT) \
     X(TOKEN_GT) \
     X(TOKEN_LT) \
@@ -192,6 +193,8 @@ static int alloc_token(const enum token_id id,
 
         switch (id)
         {
+            case TOKEN_HEX:
+                /* Fall through. */
             case TOKEN_FLOAT:
                 /* Fall through. */
             case TOKEN_SYMBOL:
@@ -240,6 +243,36 @@ static int is_integer(const char *const symbol)
         if (*s < '0' || *s > '9')
             return 0;
     }
+
+    return 1;
+}
+
+static int is_hex(const char *const symbol)
+{
+    const size_t len = strlen(symbol);
+    const size_t minlen = strlen("0x");
+
+    if (len >= minlen && symbol[0] == '0' &&
+        (symbol[1] == 'x' || symbol[1] == 'X'))
+    {
+        if (len > minlen)
+        {
+            for (const char *s = &symbol[2]; *s; s++)
+            {
+                if ((*s >= 'a' && *s <= 'f')
+                 || (*s >= 'A' && *s <= 'F')
+                 || (*s >= '0' && *s <= '9'))
+                    continue;
+                else
+                    return 0;
+            }
+        }
+        else
+            FATAL_ERROR("invalid hex number at line %u, column %u",
+                        line, start_column);
+    }
+    else
+        return 0;
 
     return 1;
 }
@@ -295,6 +328,10 @@ static int process_symbol(const char *const symbol)
         {
             if (alloc_token(TOKEN_INT, symbol)) return 1;
         }
+        else if (is_hex(symbol))
+        {
+            if (alloc_token(TOKEN_HEX, symbol)) return 1;
+        }
         else if (is_float(symbol))
             if (alloc_token(TOKEN_FLOAT, symbol)) return 1;
     }
@@ -345,8 +382,8 @@ start:
                 goto next;
 
             case '\n':
-                /* Fall through. */
                 line++;
+                /* Fall through. */
             case '\r':
                 /* Support for CR-only. */
                 if (*c == '\r' && (*(c + 1) != '\n'))
