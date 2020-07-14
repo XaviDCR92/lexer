@@ -17,12 +17,14 @@ static unsigned int line, start_column, column;
     X(TOKEN_EQ) \
     X(TOKEN_MOV) \
     X(TOKEN_INT) \
+    X(TOKEN_FLOAT) \
     X(TOKEN_GT) \
     X(TOKEN_LT) \
     X(TOKEN_GE) \
     X(TOKEN_LE) \
     X(TOKEN_STAR) \
     X(TOKEN_PLUS) \
+    X(TOKEN_MINUS) \
     X(TOKEN_SLASH) \
     X(TOKEN_DOT) \
     X(TOKEN_LET) \
@@ -34,7 +36,7 @@ static unsigned int line, start_column, column;
     X(TOKEN_RP) \
     X(TOKEN_LC) \
     X(TOKEN_RC) \
-    X(TOKEN_DOTC)
+    X(TOKEN_COMMA)
 
 enum token_id
 {
@@ -190,6 +192,8 @@ static int alloc_token(const enum token_id id,
 
         switch (id)
         {
+            case TOKEN_FLOAT:
+                /* Fall through. */
             case TOKEN_SYMBOL:
                 /* Fall through. */
             case TOKEN_INT:
@@ -229,6 +233,37 @@ static int alloc_token(const enum token_id id,
     return 1;
 }
 
+static int is_integer(const char *const symbol)
+{
+    for (const char *s = symbol; *s; s++)
+    {
+        if (*s < '0' || *s > '9')
+            return 0;
+    }
+
+    return 1;
+}
+
+static int is_float(const char *const symbol)
+{
+    int count = 0;
+
+    for (const char *s = symbol; *s; s++)
+    {
+        if (count > 1)
+            return 0;
+        else if (*s < '0' || *s > '9')
+        {
+            if (*s == '.')
+                count++;
+            else
+                return 0;
+        }
+    }
+
+    return 1;
+}
+
 static int process_symbol(const char *const symbol)
 {
     if (strlen(symbol))
@@ -256,8 +291,12 @@ static int process_symbol(const char *const symbol)
                 || (*symbol >= 'A' && *symbol <= 'Z'))
             if (alloc_token(TOKEN_SYMBOL, symbol)) return 1;
 
-        if (*symbol >= '0' && *symbol <= '9')
+        if (is_integer(symbol))
+        {
             if (alloc_token(TOKEN_INT, symbol)) return 1;
+        }
+        else if (is_float(symbol))
+            if (alloc_token(TOKEN_FLOAT, symbol)) return 1;
     }
 
     return 0;
@@ -277,6 +316,7 @@ static int tokenize(const char *const buf)
         {TOKEN_LT, "<"},
         {TOKEN_GT, ">"},
         {TOKEN_PLUS, "+"},
+        {TOKEN_MINUS, "-"},
         {TOKEN_SLASH, "/"},
         {TOKEN_STAR, "*"},
         {TOKEN_DOT, "."},
@@ -285,7 +325,7 @@ static int tokenize(const char *const buf)
         {TOKEN_RP, ")"},
         {TOKEN_LC, "{"},
         {TOKEN_RC, "}"},
-        {TOKEN_DOTC, ";"}
+        {TOKEN_COMMA, ","}
     };
 
     const char *c = buf;
@@ -343,8 +383,16 @@ start:
                 if (s != symbol)
                 {
                     *s = '\0';
-                    if (process_symbol(symbol))
+
+                    if (ops[i].id == TOKEN_DOT && is_integer(symbol))
+                    {
+                        /* Exception: dot is used both as operator and decimal
+                         * separator according to the context. */
+                        goto store;
+                    }
+                    else if (process_symbol(symbol))
                         return 1;
+
                     REWIND;
                 }
 
@@ -360,6 +408,10 @@ start:
             }
         }
 
+        if (!isalnum(*c))
+            FATAL_ERROR("invalid character '%c' (0x%hhu), line %u, column %u",
+                        *c, *c, line, column);
+store:
         *s++ = *c;
         if (!start_column)
             start_column = column;
