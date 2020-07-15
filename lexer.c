@@ -10,7 +10,7 @@
 #define FATAL_ERROR(...) fatal_error(__func__, __LINE__, __VA_ARGS__)
 
 static int verbose, extra_verbose;
-static unsigned int line, start_column, column;
+static unsigned int line, start_column, column, pos, start_pos;
 
 #define TOKEN_LIST \
     X(TOKEN_SYMBOL) \
@@ -67,7 +67,7 @@ struct
     {
         enum token_id id;
         char *value;
-        unsigned int line, column;
+        unsigned int line, column, pos;
     } *list;
     size_t n;
 } tokens;
@@ -224,9 +224,11 @@ static int alloc_token(const enum token_id id,
         new_t->id = id;
         new_t->line = line;
         new_t->column = start_column;
-        start_column = 0;
-        LOGVV("id=%s, value=\"%s\", line=%u, col=%u", token_name(new_t->id),
-                new_t->value, new_t->line, new_t->column);
+        new_t->pos = start_pos;
+        start_column = 0; start_pos = 0;
+        LOGVV("id=%s, value=\"%s\", line=%u, col=%u, pos=%u",
+              token_name(new_t->id), new_t->value, new_t->line,
+              new_t->column, new_t->pos);
         return 0;
 
     }
@@ -375,6 +377,8 @@ static int tokenize(const char *const buf)
     while (*c)
     {
 start:
+        pos++;
+
         switch (*c)
         {
             case '#':
@@ -435,6 +439,7 @@ start:
 
                 strcpy(symbol, ops[i].str);
                 start_column = column;
+                start_pos = pos;
                 if (alloc_token(ops[i].id, symbol))
                     return 1;
 
@@ -446,12 +451,15 @@ start:
         }
 
         if (!isalnum(*c))
-            FATAL_ERROR("invalid character '%c' (0x%hhu), line %u, column %u",
-                        *c, *c, line, column);
+            FATAL_ERROR("invalid character '%c' (0x%hhu), line %u, column %u,"
+                        " pos %u", *c, *c, line, column, pos);
 store:
         *s++ = *c;
         if (!start_column)
             start_column = column;
+
+        if (!start_pos)
+            start_pos = pos;
 next:
         if (*c != '\n' && *c != '\r')
             column++;
