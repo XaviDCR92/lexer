@@ -5,54 +5,71 @@
 #include <stddef.h>
 #include <stdarg.h>
 
-#define LOGV(...) logv(__func__, __LINE__, __VA_ARGS__)
-#define LOGVV(...) logvv(__func__, __LINE__, __VA_ARGS__)
-#define FATAL_ERROR(...) fatal_error(__func__, __LINE__, __VA_ARGS__)
-
 static int verbose, extra_verbose;
 static unsigned int line, start_column, column, pos, start_pos;
+static const char *path;
 
 #define TOKEN_LIST \
-    X(TOKEN_SYMBOL) \
-    X(TOKEN_EQ) \
-    X(TOKEN_MOV) \
-    X(TOKEN_INT) \
-    X(TOKEN_HEX) \
-    X(TOKEN_FLOAT) \
-    X(TOKEN_GT) \
-    X(TOKEN_LT) \
-    X(TOKEN_GE) \
-    X(TOKEN_LE) \
-    X(TOKEN_STAR) \
-    X(TOKEN_PLUS) \
-    X(TOKEN_MINUS) \
-    X(TOKEN_SLASH) \
-    X(TOKEN_DOT) \
-    X(TOKEN_LET) \
-    X(TOKEN_IF) \
-    X(TOKEN_WHILE) \
-    X(TOKEN_FOR) \
-    X(TOKEN_ELSE) \
-    X(TOKEN_LP) \
-    X(TOKEN_RP) \
-    X(TOKEN_LC) \
-    X(TOKEN_RC) \
-    X(TOKEN_COMMA)
+
 
 enum token_id
 {
-#define X(x) x,
-    TOKEN_LIST
-#undef X
+    TOKEN_SYMBOL,
+    TOKEN_EQ,
+    TOKEN_MOV,
+    TOKEN_INT,
+    TOKEN_HEX,
+    TOKEN_FLOAT,
+    TOKEN_GT,
+    TOKEN_LT,
+    TOKEN_GE,
+    TOKEN_LE,
+    TOKEN_STAR,
+    TOKEN_PLUS,
+    TOKEN_MINUS,
+    TOKEN_SLASH,
+    TOKEN_DOT,
+    TOKEN_LET,
+    TOKEN_IF,
+    TOKEN_WHILE,
+    TOKEN_FOR,
+    TOKEN_ELSE,
+    TOKEN_LP,
+    TOKEN_RP,
+    TOKEN_LC,
+    TOKEN_RC,
+    TOKEN_COMMA
 };
 
 static const char *token_name(const enum token_id id)
 {
     static const char *const names[] =
     {
-#define X(x) [x] = #x,
-        TOKEN_LIST
-#undef X
+        "TOKEN_SYMBOL",
+        "TOKEN_EQ",
+        "TOKEN_MOV",
+        "TOKEN_INT",
+        "TOKEN_HEX",
+        "TOKEN_FLOAT",
+        "TOKEN_GT",
+        "TOKEN_LT",
+        "TOKEN_GE",
+        "TOKEN_LE",
+        "TOKEN_STAR",
+        "TOKEN_PLUS",
+        "TOKEN_MINUS",
+        "TOKEN_SLASH",
+        "TOKEN_DOT",
+        "TOKEN_LET",
+        "TOKEN_IF",
+        "TOKEN_WHILE",
+        "TOKEN_FOR",
+        "TOKEN_ELSE",
+        "TOKEN_LP",
+        "TOKEN_RP",
+        "TOKEN_LC",
+        "TOKEN_RC",
+        "TOKEN_COMMA"
     };
 
     if (id < (sizeof names / sizeof *names))
@@ -67,18 +84,18 @@ struct
     {
         enum token_id id;
         char *value;
+        const char *file;
         unsigned int line, column, pos;
     } *list;
     size_t n;
 } tokens;
 
-static void logv(const char *const func, const int line,
-        const char *const format, ...)
+static void logv(const char *const format, ...)
 {
-    if ((verbose || extra_verbose) && func && format)
+    if (verbose || extra_verbose)
     {
         va_list ap;
-        printf("[v] %s:%d: ", func, line);
+        printf("[v] ");
         va_start(ap, format);
         vprintf(format, ap);
         printf("\n");
@@ -86,13 +103,12 @@ static void logv(const char *const func, const int line,
     }
 }
 
-static void logvv(const char *const func, const int line,
-        const char *const format, ...)
+static void logvv(const char *const format, ...)
 {
-    if (extra_verbose && func && format)
+    if (extra_verbose && format)
     {
         va_list ap;
-        printf("[vv] %s:%d: ", func, line);
+        printf("[vv] ");
         va_start(ap, format);
         vprintf(format, ap);
         printf("\n");
@@ -108,19 +124,12 @@ static void cleanup(void)
     }
 }
 
-static void fatal_error(const char *const func, const int line,
-        const char *const format, ...)
+static void fatal_error(const char *const format, ...)
 {
-    if (func && format)
+    if (format)
     {
         va_list ap;
-        fprintf(stderr, "[error]");
-
-        if (verbose)
-            fprintf(stderr, " %s:%d: ", func, line);
-        else
-            fprintf(stderr, ": ");
-
+        fprintf(stderr, "[error]: ");
         va_start(ap, format);
         vfprintf(stderr, format, ap);
         fprintf(stderr, "\n");
@@ -154,7 +163,7 @@ static char *read_file(const char *const path)
                 if (read_bytes == sz)
                 {
                     /* File contents were read succesfully. */
-                    LOGV("File %s was opened successfully", path);
+                    logv("File %s was opened successfully", path);
 
                     buf[sz] = '\0';
                     line = 1;
@@ -162,18 +171,18 @@ static char *read_file(const char *const path)
                     return buf;
                 }
                 else
-                    FATAL_ERROR("Could not read %s succesfully. "
+                    fatal_error("Could not read %s succesfully. "
                                 "Only %d/%d bytes could be read",
                                 path, read_bytes, sz);
             }
             else
-                FATAL_ERROR("Cannot allocate buffer for file data");
+                fatal_error("Cannot allocate buffer for file data");
 
             fclose(f);
         }
     }
     else
-        FATAL_ERROR("Input file %s could not be opened", path);
+        fatal_error("Input file %s could not be opened", path);
 
     return NULL;
 }
@@ -211,7 +220,7 @@ static int alloc_token(const enum token_id id,
                 }
                 else
                 {
-                    FATAL_ERROR("could not allocate space for token value");
+                    fatal_error("could not allocate space for token value");
                     return 1;
                 }
             }
@@ -226,21 +235,23 @@ static int alloc_token(const enum token_id id,
         new_t->column = start_column;
         new_t->pos = start_pos;
         start_column = 0; start_pos = 0;
-        LOGVV("id=%s, value=\"%s\", line=%u, col=%u, pos=%u",
+        logvv("id=%s, value=\"%s\", line=%u, col=%u, pos=%u",
               token_name(new_t->id), new_t->value, new_t->line,
               new_t->column, new_t->pos);
         return 0;
 
     }
     else
-        FATAL_ERROR("could not allocate space for new token");
+        fatal_error("could not allocate space for new token");
 
     return 1;
 }
 
 static int is_integer(const char *const symbol)
 {
-    for (const char *s = symbol; *s; s++)
+    const char *s;
+
+    for (s = symbol; *s; s++)
     {
         if (*s < '0' || *s > '9')
             return 0;
@@ -259,7 +270,9 @@ static int is_hex(const char *const symbol)
     {
         if (len > minlen)
         {
-            for (const char *s = &symbol[2]; *s; s++)
+            const char *s;
+
+            for (s = &symbol[2]; *s; s++)
             {
                 if ((*s >= 'a' && *s <= 'f')
                  || (*s >= 'A' && *s <= 'F')
@@ -270,7 +283,7 @@ static int is_hex(const char *const symbol)
             }
         }
         else
-            FATAL_ERROR("invalid hex number at line %u, column %u",
+            fatal_error("invalid hex number at line %u, column %u",
                         line, start_column);
     }
     else
@@ -282,8 +295,9 @@ static int is_hex(const char *const symbol)
 static int is_float(const char *const symbol)
 {
     int count = 0;
+    const char *s;
 
-    for (const char *s = symbol; *s; s++)
+    for (s = symbol; *s; s++)
     {
         if (count > 1)
             return 0;
@@ -313,7 +327,9 @@ static int process_symbol(const char *const symbol)
             {TOKEN_FOR, "for"}, {TOKEN_ELSE, "else"}
         };
 
-        for (size_t i = 0; i < sizeof res / sizeof *res; i++)
+        size_t i;
+
+        for (i = 0; i < sizeof res / sizeof *res; i++)
             if (!strcmp(symbol, res[i].value))
             {
                 if (alloc_token(res[i].id, symbol))
@@ -415,46 +431,55 @@ start:
                 break;
         }
 
-        for (size_t i = 0; i < sizeof ops / sizeof *ops; i++)
         {
-            const size_t len = strlen(ops[i].str);
-
-            if (!strncmp(c, ops[i].str, len))
+            size_t i;
+            for (i = 0; i < sizeof ops / sizeof *ops; i++)
             {
-                if (s != symbol)
-                {
-                    *s = '\0';
+                const size_t len = strlen(ops[i].str);
 
-                    if (ops[i].id == TOKEN_DOT && is_integer(symbol))
+                if (!strncmp(c, ops[i].str, len))
+                {
+                    if (s != symbol)
                     {
-                        /* Exception: dot is used both as operator and decimal
-                         * separator according to the context. */
-                        goto store;
+                        *s = '\0';
+
+                        if (ops[i].id == TOKEN_DOT && is_integer(symbol))
+                        {
+                            /* Exception: dot is used both as operator and decimal
+                             * separator according to the context. */
+                            goto store;
+                        }
+                        else if (process_symbol(symbol))
+                            return 1;
+
+                        REWIND;
                     }
-                    else if (process_symbol(symbol))
+
+                    strcpy(symbol, ops[i].str);
+                    start_column = column;
+                    start_pos = pos;
+                    if (alloc_token(ops[i].id, symbol))
                         return 1;
 
                     REWIND;
+                    c += len;
+                    column += len;
+                    goto start;
                 }
-
-                strcpy(symbol, ops[i].str);
-                start_column = column;
-                start_pos = pos;
-                if (alloc_token(ops[i].id, symbol))
-                    return 1;
-
-                REWIND;
-                c += len;
-                column += len;
-                goto start;
             }
         }
 
         if (!isalnum(*c))
-            FATAL_ERROR("invalid character '%c' (0x%hhu), line %u, column %u,"
+            fatal_error("invalid character '%c' (0x%hhu), line %u, column %u,"
                         " pos %u", *c, *c, line, column, pos);
 store:
-        *s++ = *c;
+        if ((size_t)(s - symbol) < sizeof symbol)
+            *s++ = *c;
+        else
+            fatal_error("maximum symbol length (%u bytes) exceeded"
+                        " on symbol \"%s\", line %u, column %u",
+                        sizeof symbol, symbol, line, column);
+
         if (!start_column)
             start_column = column;
 
@@ -482,9 +507,9 @@ static int exec(const char *const path)
 
 int main(const int argc, const char *argv[])
 {
-    const char *path = NULL;
+    int i;
 
-    for (int i = 1; i < argc; i++)
+    for (i = 1; i < argc; i++)
     {
         const char *const arg = argv[i];
 
@@ -498,13 +523,13 @@ int main(const int argc, const char *argv[])
                 verbose = 1;
             else
             {
-                FATAL_ERROR("unrecognized option %s", arg);
+                fatal_error("unrecognized option %s", arg);
                 return EXIT_FAILURE;
             }
         }
         else
         {
-            FATAL_ERROR("input path already specified (%s)", path);
+            fatal_error("input path already specified (%s)", path);
             return EXIT_FAILURE;
         }
     }
@@ -514,7 +539,7 @@ int main(const int argc, const char *argv[])
         if (exec(path)) return EXIT_FAILURE;
     }
     else
-        FATAL_ERROR("no input file specified");
+        fatal_error("no input file specified");
 
     return EXIT_SUCCESS;
 }
