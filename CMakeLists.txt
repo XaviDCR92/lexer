@@ -1,0 +1,6 @@
+set(project lexer)
+cmake_minimum_required(VERSION 3.5)
+project(${project})
+add_definitions(-Wall -Wextra --pedantic -std=c99)
+add_executable(${project})
+target_sources(${project} PRIVATE "lexer.c")
