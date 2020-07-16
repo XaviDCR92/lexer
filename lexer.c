@@ -1,3 +1,5 @@
+#include "token.h"
+#include "parser.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,87 +10,7 @@
 static int verbose, extra_verbose;
 static unsigned int line, start_column, column, pos, start_pos;
 static const char *path;
-
-#define TOKEN_LIST \
-
-
-enum token_id
-{
-    TOKEN_SYMBOL,
-    TOKEN_EQ,
-    TOKEN_MOV,
-    TOKEN_INT,
-    TOKEN_HEX,
-    TOKEN_FLOAT,
-    TOKEN_GT,
-    TOKEN_LT,
-    TOKEN_GE,
-    TOKEN_LE,
-    TOKEN_STAR,
-    TOKEN_PLUS,
-    TOKEN_MINUS,
-    TOKEN_SLASH,
-    TOKEN_DOT,
-    TOKEN_LET,
-    TOKEN_IF,
-    TOKEN_WHILE,
-    TOKEN_FOR,
-    TOKEN_ELSE,
-    TOKEN_LP,
-    TOKEN_RP,
-    TOKEN_LC,
-    TOKEN_RC,
-    TOKEN_COMMA
-};
-
-static const char *token_name(const enum token_id id)
-{
-    static const char *const names[] =
-    {
-        "TOKEN_SYMBOL",
-        "TOKEN_EQ",
-        "TOKEN_MOV",
-        "TOKEN_INT",
-        "TOKEN_HEX",
-        "TOKEN_FLOAT",
-        "TOKEN_GT",
-        "TOKEN_LT",
-        "TOKEN_GE",
-        "TOKEN_LE",
-        "TOKEN_STAR",
-        "TOKEN_PLUS",
-        "TOKEN_MINUS",
-        "TOKEN_SLASH",
-        "TOKEN_DOT",
-        "TOKEN_LET",
-        "TOKEN_IF",
-        "TOKEN_WHILE",
-        "TOKEN_FOR",
-        "TOKEN_ELSE",
-        "TOKEN_LP",
-        "TOKEN_RP",
-        "TOKEN_LC",
-        "TOKEN_RC",
-        "TOKEN_COMMA"
-    };
-
-    if (id < (sizeof names / sizeof *names))
-        return names[id];
-
-    return "unknown token";
-}
-
-struct
-{
-    struct token
-    {
-        enum token_id id;
-        char *value;
-        const char *file;
-        unsigned int line, column, pos;
-    } *list;
-    size_t n;
-} tokens;
+static struct token_list tokens;
 
 static void logv(const char *const format, ...)
 {
@@ -119,9 +41,7 @@ static void logvv(const char *const format, ...)
 static void cleanup(void)
 {
     if (tokens.list)
-    {
         free(tokens.list);
-    }
 }
 
 static void fatal_error(const char *const format, ...)
@@ -130,6 +50,10 @@ static void fatal_error(const char *const format, ...)
     {
         va_list ap;
         fprintf(stderr, "[error]: ");
+
+        if (path)
+            fprintf(stderr, "%s: ", path);
+
         va_start(ap, format);
         vfprintf(stderr, format, ap);
         fprintf(stderr, "\n");
@@ -234,6 +158,7 @@ static int alloc_token(const enum token_id id,
         new_t->line = line;
         new_t->column = start_column;
         new_t->pos = start_pos;
+        new_t->file = path;
         start_column = 0; start_pos = 0;
         logvv("id=%s, value=\"%s\", line=%u, col=%u, pos=%u",
               token_name(new_t->id), new_t->value, new_t->line,
@@ -497,12 +422,24 @@ next:
 
 static int exec(const char *const path)
 {
+    int ret = 1;
     char *const buf = read_file(path);
 
-    if (buf) tokenize(buf); else return 1;
+    if (buf && tokenize(buf))
+    {
+        if (parse(&tokens))
+            goto end;
 
-    free(buf);
-    return 0;
+        ret = 0;
+    }
+    else
+        goto end;
+
+end:
+    if (buf)
+        free(buf);
+
+    return ret;
 }
 
 int main(const int argc, const char *argv[])
@@ -543,3 +480,4 @@ int main(const int argc, const char *argv[])
 
     return EXIT_SUCCESS;
 }
+
